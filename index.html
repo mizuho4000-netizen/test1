@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>シンプル・テトリス風ゲーム</title>
+  <style>
+    body {
+      background: #222;
+      color: #fff;
+      font-family: sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    canvas {
+      background: #000;
+      border: 2px solid #555;
+    }
+    .info {
+      margin-left: 20px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="240" height="400"></canvas>
+  <div class="info">
+    <p>← → : 移動</p>
+    <p>↑ : 回転</p>
+    <p>↓ : 早く落とす</p>
+    <p>スペース : 一気に落とす</p>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const COLS = 10;
+    const ROWS = 20;
+    const BLOCK = 20;
+
+    const COLORS = ['#000', '#0ff', '#00f', '#f80', '#ff0', '#0f0', '#a0f', '#f00'];
+
+    const SHAPES = [
+      [],
+      [[1, 1, 1, 1]],
+      [[2, 0, 0], [2, 2, 2]],
+      [[0, 0, 3], [3, 3, 3]],
+      [[4, 4], [4, 4]],
+      [[0, 5, 5], [5, 5, 0]],
+      [[0, 6, 0], [6, 6, 6]],
+      [[7, 7, 0], [0, 7, 7]]
+    ];
+
+    function createMatrix(w, h) {
+      return Array.from({ length: h }, () => Array(w).fill(0));
+    }
+
+    let arena = createMatrix(COLS, ROWS);
+
+    function drawBlock(x, y, color) {
+      const px = x * BLOCK;
+      const py = y * BLOCK;
+
+      // ベース色
+      ctx.fillStyle = color;
+      ctx.fillRect(px, py, BLOCK, BLOCK);
+
+      // 明るい面（左・上）
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillRect(px, py, BLOCK, 4);
+      ctx.fillRect(px, py, 4, BLOCK);
+
+      // 暗い面（右・下）
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(px + BLOCK - 4, py, 4, BLOCK);
+      ctx.fillRect(px, py + BLOCK - 4, BLOCK, 4);
+
+      // 外枠（ブロック感）
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeRect(px, py, BLOCK, BLOCK);
+    }
+
+    function drawMatrix(matrix, offset) {
+      matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+          if (value !== 0) drawBlock(x + offset.x, y + offset.y, COLORS[value]);
+        });
+      });
+    }
+
+    function collide(arena, player) {
+      const m = player.matrix;
+      const o = player.pos;
+      for (let y = 0; y < m.length; y++) {
+        for (let x = 0; x < m[y].length; x++) {
+          if (m[y][x] !== 0 &&
+              (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    function merge(arena, player) {
+      player.matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+          if (value !== 0) arena[y + player.pos.y][x + player.pos.x] = value;
+        });
+      });
+    }
+
+    function rotate(matrix) {
+      return matrix[0].map((_, i) => matrix.map(row => row[i]).reverse());
+    }
+
+    function sweep() {
+      outer: for (let y = arena.length - 1; y >= 0; y--) {
+        for (let x = 0; x < arena[y].length; x++) {
+          if (arena[y][x] === 0) continue outer;
+        }
+        const row = arena.splice(y, 1)[0].fill(0);
+        arena.unshift(row);
+        y++;
+      }
+    }
+
+    function playerDrop() {
+      player.pos.y++;
+      if (collide(arena, player)) {
+        player.pos.y--;
+        merge(arena, player);
+        resetPlayer();
+        sweep();
+      }
+      dropCounter = 0;
+    }
+
+    function resetPlayer() {
+      const type = Math.floor(Math.random() * (SHAPES.length - 1)) + 1;
+      player.matrix = SHAPES[type];
+      player.pos.y = 0;
+      player.pos.x = (COLS / 2 | 0) - (player.matrix[0].length / 2 | 0);
+      if (collide(arena, player)) arena = createMatrix(COLS, ROWS);
+    }
+
+    const player = { pos: { x: 0, y: 0 }, matrix: null };
+
+    let dropCounter = 0;
+    let dropInterval = 600;
+    let lastTime = 0;
+
+    function update(time = 0) {
+      const delta = time - lastTime;
+      lastTime = time;
+      dropCounter += delta;
+      if (dropCounter > dropInterval) playerDrop();
+      draw();
+      requestAnimationFrame(update);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawMatrix(arena, { x: 0, y: 0 });
+      drawMatrix(player.matrix, player.pos);
+    }
+
+    /* --- キーボード操作 --- */
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft') player.pos.x--;
+      if (e.key === 'ArrowRight') player.pos.x++;
+      if (e.key === 'ArrowDown') playerDrop();
+      if (e.key === 'ArrowUp') player.matrix = rotate(player.matrix);
+      if (collide(arena, player)) {
+        if (e.key === 'ArrowLeft') player.pos.x++;
+        if (e.key === 'ArrowRight') player.pos.x--;
+      }
+    });
+
+    /* --- スマホタップ操作 --- */
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const x = e.touches[0].clientX - rect.left;
+      const y = e.touches[0].clientY - rect.top;
+
+      const w = canvas.width;
+      const h = canvas.height;
+
+      if (y < h * 0.3) {
+        // 上：回転
+        player.matrix = rotate(player.matrix);
+      } else if (x < w * 0.3) {
+        // 左
+        player.pos.x--;
+        if (collide(arena, player)) player.pos.x++;
+      } else if (x > w * 0.7) {
+        // 右
+        player.pos.x++;
+        if (collide(arena, player)) player.pos.x--;
+      } else {
+        // 下：落下
+        playerDrop();
+      }
+    }, { passive: false });
+
+    resetPlayer();
+    update();
+  </script>
+</body>
+</html>
